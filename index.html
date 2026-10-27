@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Китайский словарь</title>
+<style>
+  :root {
+    --bg: #1c1a17;
+    --text: #e8e2d6;
+    --text-muted: #9a9285;
+    --text-heading: #d4c8b4;
+    --highlight: #d4c8b4;
+    --ease: cubic-bezier(.19,1,.22,1);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    caret-color: transparent;
+  }
+
+  .main {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 24px 20px;
+    gap: 0;
+  }
+
+  .sentence {
+    font-size: clamp(1.6rem, 8vw, 4rem);
+    line-height: 1.5;
+    font-weight: 500;
+    color: var(--text);
+    text-align: center;
+    max-width: 100%;
+    word-break: break-all;
+    width: 100%;
+    min-height: 1.5em;
+  }
+
+  .sentence .char {
+    cursor: pointer;
+    transition: color 0.15s var(--ease), background 0.15s var(--ease);
+    border-radius: 4px;
+    padding: 0 2px;
+  }
+
+  .sentence .char.selected {
+    color: var(--bg);
+    background: var(--highlight);
+  }
+
+  .sentence .char:hover {
+    color: var(--highlight);
+  }
+
+  .sentence .char.selected:hover {
+    color: var(--bg);
+  }
+
+  .article-wrap {
+    margin-top: 80px;
+    width: 100%;
+    max-width: 560px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .article {
+    width: 100%;
+    min-height: 80px;
+    padding: 16px 20px;
+    background: #252220;
+    border-radius: 16px;
+    color: var(--text);
+    font-size: clamp(0.95rem, 3.5vw, 1.15rem);
+    line-height: 1.6;
+    opacity: 0;
+    transition: opacity 0.25s var(--ease);
+  }
+
+  .article.visible {
+    opacity: 1;
+  }
+
+  .article .word {
+    font-size: 1.4em;
+    font-weight: 600;
+    color: var(--text-heading);
+    margin-right: 8px;
+  }
+
+  .article .pinyin {
+    color: var(--text-muted);
+    font-style: italic;
+    margin-left: 4px;
+  }
+
+  .article .defs {
+    margin-top: 6px;
+    color: var(--text);
+  }
+
+  .article .defs div {
+    margin-bottom: 2px;
+  }
+
+  .article .notfound {
+    color: var(--text-muted);
+    margin-top: 6px;
+  }
+
+  .loading {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    text-align: center;
+    margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+
+<div class="main" id="mainArea">
+  <div class="sentence" id="sentence">загрузка…</div>
+  <div class="article-wrap">
+    <div class="article" id="article"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var sentenceEl = document.getElementById('sentence');
+  var articleEl = document.getElementById('article');
+
+  // Список частых слов для поиска предложений в Tatoeba
+  var SEARCH_WORDS = ['我', '你', '他', '她', '我们', '什么', '这个', '没有', '知道', '喜欢', '中国', '朋友'];
+
+  var currentSentence = '';
+  var selectedIndices = [];
+  var chars = [];
+  var articleCache = {};
+  var currentAbort = null;
+
+  // ===== Загрузка предложения из Tatoeba =====
+  function fetchSentence() {
+    if (currentAbort) currentAbort.abort();
+    var abort = new AbortController();
+    currentAbort = abort;
+
+    sentenceEl.textContent = 'загрузка…';
+    sentenceEl.className = 'sentence';
+    hideArticle();
+
+    var word = SEARCH_WORDS[Math.floor(Math.random() * SEARCH_WORDS.length)];
+    var url = 'https://tatoeba.elnu.com/?query=' + encodeURIComponent(word) + '&from=cmn';
+
+    fetch(url, { signal: abort.signal })
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        if (abort.signal.aborted) return;
+        var results = data.results || [];
+        if (results.length === 0) throw new Error('empty');
+        var pick = results[Math.floor(Math.random() * results.length)];
+        renderSentence(pick.text);
+      })
+      .catch(function (err) {
+        if (err.name === 'AbortError') return;
+        console.warn('Tatoeba failed:', err);
+        sentenceEl.textContent = 'Ошибка загрузки. Нажмите для повтора.';
+      });
+  }
+
+  // ===== Отрисовка предложения =====
+  function renderSentence(text) {
+    currentSentence = text;
+    chars = [];
+    selectedIndices = [];
+    articleCache = {};
+
+    sentenceEl.innerHTML = '';
+    sentenceEl.className = 'sentence';
+
+    for (var i = 0; i < text.length; i++) {
+      var ch = text[i];
+      chars.push(ch);
+
+      var span = document.createElement('span');
+      span.className = 'char';
+      span.textContent = ch;
+      span.dataset.index = i;
+
+      span.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var idx = parseInt(this.dataset.index, 10);
+        toggleChar(idx);
+      });
+
+      sentenceEl.appendChild(span);
+    }
+  }
+
+  // ===== Выделение / снятие =====
+  function toggleChar(index) {
+    var ch = chars[index];
+    if (!/[\u4e00-\u9fff]/.test(ch)) return;
+
+    var pos = selectedIndices.indexOf(index);
+    if (pos !== -1) {
+      selectedIndices.splice(pos, 1);
+    } else {
+      selectedIndices.push(index);
+      selectedIndices.sort(function (a, b) { return a - b; });
+    }
+
+    updateSelectionUI();
+    updateArticle();
+  }
+
+  function updateSelectionUI() {
+    var spans = sentenceEl.querySelectorAll('.char');
+    for (var i = 0; i < spans.length; i++) {
+      var idx = parseInt(spans[i].dataset.index, 10);
+      if (selectedIndices.indexOf(idx) !== -1) {
+        spans[i].classList.add('selected');
+      } else {
+        spans[i].classList.remove('selected');
+      }
+    }
+  }
+
+  // ===== Поиск статьи =====
+  function getSelectedText() {
+    var s = '';
+    for (var i = 0; i < selectedIndices.length; i++) {
+      s += chars[selectedIndices[i]];
+    }
+    return s;
+  }
+
+  function updateArticle() {
+    if (selectedIndices.length === 0) {
+      hideArticle();
+      return;
+    }
+
+    var word = getSelectedText();
+
+    // Проверяем кеш для текущего предложения
+    if (articleCache[word] !== undefined) {
+      renderArticle(word, articleCache[word]);
+      return;
+    }
+
+    // Показываем загрузку
+    articleEl.innerHTML = '<div class="loading">загрузка статьи…</div>';
+    articleEl.classList.add('visible');
+
+    var url = 'https://hsk.fulinlabs.com/api/agent/word?q=' + encodeURIComponent(word);
+
+    fetch(url)
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        // Кешируем результат
+        articleCache[word] = data;
+        // Проверяем, что выделение не изменилось, пока грузили
+        if (getSelectedText() === word) {
+          renderArticle(word, data);
+        }
+      })
+      .catch(function (err) {
+        console.warn('HSK Studio failed:', err);
+        articleCache[word] = null;
+        if (getSelectedText() === word) {
+          renderArticle(word, null);
+        }
+      });
+  }
+
+  function renderArticle(word, data) {
+    var html = '<span class="word">' + escapeHtml(word) + '</span>';
+
+    if (data && data.pinyin) {
+      html += '<span class="pinyin">' + escapeHtml(data.pinyin) + '</span>';
+    }
+
+    if (data && data.meaning) {
+      html += '<div class="defs">';
+      // meaning может быть строкой или массивом
+      var meanings = Array.isArray(data.meaning) ? data.meaning : [data.meaning];
+      for (var i = 0; i < meanings.length; i++) {
+        html += '<div>' + escapeHtml(String(meanings[i])) + '</div>';
+      }
+      html += '</div>';
+    } else if (data) {
+      // Если поле называется иначе (например, definitions)
+      html += '<div class="defs"><div>' + escapeHtml(JSON.stringify(data)) + '</div></div>';
+    } else {
+      html += '<div class="notfound">статья не найдена</div>';
+    }
+
+    articleEl.innerHTML = html;
+    articleEl.classList.add('visible');
+  }
+
+  function hideArticle() {
+    articleEl.classList.remove('visible');
+    articleEl.innerHTML = '';
+  }
+
+  function escapeHtml(text) {
+    var div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // ===== Долгий тап по пустому месту — новое предложение =====
+  var LONG_PRESS_MS = 500;
+  var pressTimer = null;
+
+  document.body.addEventListener('touchstart', function (e) {
+    if (e.target.classList.contains('char')) return;
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(function () {
+      fetchSentence();
+    }, LONG_PRESS_MS);
+  }, { passive: true });
+
+  document.body.addEventListener('touchend', function () {
+    clearTimeout(pressTimer);
+  }, { passive: true });
+
+  document.body.addEventListener('touchmove', function () {
+    clearTimeout(pressTimer);
+  }, { passive: true });
+
+  var mouseTimer = null;
+  document.body.addEventListener('mousedown', function (e) {
+    if (e.target.classList.contains('char')) return;
+    if (e.button !== 0) return;
+    clearTimeout(mouseTimer);
+    mouseTimer = setTimeout(function () {
+      fetchSentence();
+    }, LONG_PRESS_MS);
+  });
+
+  document.body.addEventListener('mouseup', function () {
+    clearTimeout(mouseTimer);
+  });
+
+  // ===== Старт =====
+  fetchSentence();
+
+})();
+</script>
+</body>
+</html>

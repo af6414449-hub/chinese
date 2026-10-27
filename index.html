@@ -36,7 +36,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    padding: 24px 20px;
+    padding: 60px 20px 20px 20px; /* Увеличен отступ сверху для предложения */
     gap: 0;
   }
 
@@ -73,7 +73,7 @@
   }
 
   .article-wrap {
-    margin-top: 80px;
+    margin-top: 120px; /* Увеличен отступ для статьи */
     width: 100%;
     max-width: 560px;
     display: flex;
@@ -83,7 +83,7 @@
   .article {
     width: 100%;
     min-height: 80px;
-    padding: 16px 20px;
+    padding: 20px 24px;
     background: #252220;
     border-radius: 16px;
     color: var(--text);
@@ -98,7 +98,7 @@
   }
 
   .article .word {
-    font-size: 1.4em;
+    font-size: 1.5em;
     font-weight: 600;
     color: var(--text-heading);
     margin-right: 8px;
@@ -311,20 +311,36 @@
   function renderArticle(word, data) {
     var html = '<span class="word">' + escapeHtml(word) + '</span>';
 
-    if (data && data.pinyin) {
-      html += '<span class="pinyin">' + escapeHtml(data.pinyin) + '</span>';
+    // Основное слово и пиньинь берем из объекта match
+    if (data && data.match) {
+      if (data.match.pinyin) {
+        html += '<span class="pinyin">' + escapeHtml(data.match.pinyin) + '</span>';
+      }
+      
+      // Если у самого слова есть прямой перевод строкой, выводим его
+      if (typeof data.match.meaning === 'string') {
+        html += '<div class="defs"><div>' + escapeHtml(data.match.meaning) + '</div></div>';
+      }
     }
 
-    if (data && data.meaning) {
-      html += '<div class="defs">';
-      var meanings = Array.isArray(data.meaning) ? data.meaning : [data.meaning];
-      for (var i = 0; i < meanings.length; i++) {
-        html += '<div>' + escapeHtml(String(meanings[i])) + '</div>';
+    // Выводим связанные слова (те, что были в массиве)
+    if (data && data.match && Array.isArray(data.match.meaning)) {
+      html += '<div class="defs" style="margin-top: 14px; border-top: 1px solid #3a352e; padding-top: 10px;">';
+      html += '<div style="font-size: 0.85em; color: var(--text-muted); margin-bottom: 8px;">Связанные слова:</div>';
+      
+      for (var i = 0; i < data.match.meaning.length; i++) {
+        var item = data.match.meaning[i];
+        if (item && item.word) {
+          html += '<div style="margin-bottom: 10px;">';
+          html += '<strong style="color: var(--text-heading);">' + escapeHtml(item.word) + '</strong> ';
+          if (item.pinyin) html += '<span style="color: var(--text-muted); font-style: italic; font-size: 0.9em;">' + escapeHtml(item.pinyin) + '</span> ';
+          if (item.hskLevel) html += '<span style="font-size: 0.8em; background: #3a352e; padding: 2px 6px; border-radius: 4px; margin-left: 4px;">HSK ' + item.hskLevel + '</span>';
+          html += '<br><span style="font-size: 0.95em;">' + escapeHtml(item.meaning) + '</span>';
+          html += '</div>';
+        }
       }
       html += '</div>';
-    } else if (data) {
-      html += '<div class="defs"><div>' + escapeHtml(JSON.stringify(data)) + '</div></div>';
-    } else {
+    } else if (!data) {
       html += '<div class="notfound">словарная статья не найдена</div>';
     }
 

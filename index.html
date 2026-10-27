@@ -148,56 +148,70 @@
   var sentenceEl = document.getElementById('sentence');
   var articleEl = document.getElementById('article');
 
-  // Список частых слов для поиска предложений в Tatoeba
-  var SEARCH_WORDS = ['我', '你', '他', '她', '我们', '什么', '这个', '没有', '知道', '喜欢', '中国', '朋友'];
-
+  var allSentences = [];
   var currentSentence = '';
   var selectedIndices = [];
   var chars = [];
   var articleCache = {};
-  var currentAbort = null;
+  var lastIndex = -1;
 
-  // ===== Загрузка предложения из Tatoeba =====
-  function fetchSentence() {
-    if (currentAbort) currentAbort.abort();
-    var abort = new AbortController();
-    currentAbort = abort;
-
-    sentenceEl.textContent = 'загрузка…';
-    sentenceEl.className = 'sentence';
-    hideArticle();
-
-    var word = SEARCH_WORDS[Math.floor(Math.random() * SEARCH_WORDS.length)];
-    var url = 'https://tatoeba.elnu.com/?query=' + encodeURIComponent(word) + '&from=cmn';
-
-    fetch(url, { signal: abort.signal })
+  // ===== Загрузка предложений из локального JSON =====
+  function loadSentences() {
+    fetch('sentences.json')
       .then(function (res) {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         return res.json();
       })
       .then(function (data) {
-        if (abort.signal.aborted) return;
-        var results = data.results || [];
-        if (results.length === 0) throw new Error('empty');
-        var pick = results[Math.floor(Math.random() * results.length)];
-        renderSentence(pick.text);
+        if (!Array.isArray(data) || data.length === 0) {
+          throw new Error('пустой список');
+        }
+        allSentences = data;
+        showNextSentence(false);
       })
       .catch(function (err) {
-        if (err.name === 'AbortError') return;
-        console.warn('Tatoeba failed:', err);
-        sentenceEl.textContent = 'Ошибка загрузки. Нажмите для повтора.';
+        console.warn('Не удалось загрузить sentences.json:', err);
+        sentenceEl.textContent = 'Ошибка загрузки sentences.json';
       });
   }
 
-  // ===== Отрисовка предложения =====
+  // ===== Выбор и отрисовка предложения =====
+  function showNextSentence(animate) {
+    if (allSentences.length === 0) return;
+
+    var idx;
+    if (allSentences.length === 1) {
+      idx = 0;
+    } else {
+      do {
+        idx = Math.floor(Math.random() * allSentences.length);
+      } while (idx === lastIndex);
+    }
+    lastIndex = idx;
+
+    var text = allSentences[idx];
+
+    if (animate) {
+      sentenceEl.style.opacity = '0';
+      setTimeout(function () {
+        renderSentence(text);
+        sentenceEl.style.opacity = '1';
+      }, 200);
+    } else {
+      renderSentence(text);
+    }
+  }
+
   function renderSentence(text) {
     currentSentence = text;
     chars = [];
     selectedIndices = [];
     articleCache = {};
+    hideArticle();
 
     sentenceEl.innerHTML = '';
     sentenceEl.className = 'sentence';
+    sentenceEl.style.transition = 'opacity 0.2s ease';
 
     for (var i = 0; i < text.length; i++) {
       var ch = text[i];
@@ -247,7 +261,7 @@
     }
   }
 
-  // ===== Поиск статьи =====
+  // ===== Словарная статья =====
   function getSelectedText() {
     var s = '';
     for (var i = 0; i < selectedIndices.length; i++) {
@@ -264,13 +278,11 @@
 
     var word = getSelectedText();
 
-    // Проверяем кеш для текущего предложения
     if (articleCache[word] !== undefined) {
       renderArticle(word, articleCache[word]);
       return;
     }
 
-    // Показываем загрузку
     articleEl.innerHTML = '<div class="loading">загрузка статьи…</div>';
     articleEl.classList.add('visible');
 
@@ -282,15 +294,13 @@
         return res.json();
       })
       .then(function (data) {
-        // Кешируем результат
         articleCache[word] = data;
-        // Проверяем, что выделение не изменилось, пока грузили
         if (getSelectedText() === word) {
           renderArticle(word, data);
         }
       })
       .catch(function (err) {
-        console.warn('HSK Studio failed:', err);
+        console.warn('HSK Studio ошибка:', err);
         articleCache[word] = null;
         if (getSelectedText() === word) {
           renderArticle(word, null);
@@ -307,17 +317,15 @@
 
     if (data && data.meaning) {
       html += '<div class="defs">';
-      // meaning может быть строкой или массивом
       var meanings = Array.isArray(data.meaning) ? data.meaning : [data.meaning];
       for (var i = 0; i < meanings.length; i++) {
         html += '<div>' + escapeHtml(String(meanings[i])) + '</div>';
       }
       html += '</div>';
     } else if (data) {
-      // Если поле называется иначе (например, definitions)
       html += '<div class="defs"><div>' + escapeHtml(JSON.stringify(data)) + '</div></div>';
     } else {
-      html += '<div class="notfound">статья не найдена</div>';
+      html += '<div class="notfound">словарная статья не найдена</div>';
     }
 
     articleEl.innerHTML = html;
@@ -343,7 +351,7 @@
     if (e.target.classList.contains('char')) return;
     clearTimeout(pressTimer);
     pressTimer = setTimeout(function () {
-      fetchSentence();
+      showNextSentence(true);
     }, LONG_PRESS_MS);
   }, { passive: true });
 
@@ -361,7 +369,7 @@
     if (e.button !== 0) return;
     clearTimeout(mouseTimer);
     mouseTimer = setTimeout(function () {
-      fetchSentence();
+      showNextSentence(true);
     }, LONG_PRESS_MS);
   });
 
@@ -370,7 +378,7 @@
   });
 
   // ===== Старт =====
-  fetchSentence();
+  loadSentences();
 
 })();
 </script>

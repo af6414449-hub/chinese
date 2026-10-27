@@ -36,7 +36,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    padding: 60px 20px 20px 20px; /* Увеличен отступ сверху для предложения */
+    padding: 60px 20px 20px 20px;
     gap: 0;
   }
 
@@ -73,11 +73,12 @@
   }
 
   .article-wrap {
-    margin-top: 120px; /* Увеличен отступ для статьи */
+    margin-top: 120px;
     width: 100%;
     max-width: 560px;
     display: flex;
     justify-content: center;
+    flex-shrink: 0;
   }
 
   .article {
@@ -130,6 +131,26 @@
     text-align: center;
     margin-top: 8px;
   }
+
+  /* Блок перевода внизу экрана */
+  .translation-wrap {
+    position: fixed;
+    bottom: 30px;
+    left: 20px;
+    right: 20px;
+    display: flex;
+    justify-content: center;
+    pointer-events: none; /* Чтобы не мешать кликам */
+  }
+
+  .translation {
+    font-size: clamp(1rem, 4vw, 1.4rem);
+    color: var(--text-muted);
+    text-align: center;
+    line-height: 1.4;
+    max-width: 560px;
+    transition: opacity 0.3s var(--ease);
+  }
 </style>
 </head>
 <body>
@@ -141,12 +162,17 @@
   </div>
 </div>
 
+<div class="translation-wrap">
+  <div class="translation" id="translation"></div>
+</div>
+
 <script>
 (function () {
   'use strict';
 
   var sentenceEl = document.getElementById('sentence');
   var articleEl = document.getElementById('article');
+  var translationEl = document.getElementById('translation');
 
   var allSentences = [];
   var currentSentence = '';
@@ -155,7 +181,6 @@
   var articleCache = {};
   var lastIndex = -1;
 
-  // ===== Загрузка предложений из локального JSON =====
   function loadSentences() {
     fetch('sentences.json')
       .then(function (res) {
@@ -175,7 +200,6 @@
       });
   }
 
-  // ===== Выбор и отрисовка предложения =====
   function showNextSentence(animate) {
     if (allSentences.length === 0) return;
 
@@ -189,16 +213,27 @@
     }
     lastIndex = idx;
 
-    var text = allSentences[idx];
+    var item = allSentences[idx]; // Теперь это объект {cn, ru}
 
     if (animate) {
       sentenceEl.style.opacity = '0';
+      translationEl.style.opacity = '0';
+      
       setTimeout(function () {
-        renderSentence(text);
-        sentenceEl.style.opacity = '1';
+        renderSentence(item.cn);
+        translationEl.textContent = item.ru || ''; // Выводим перевод
+        
+        // Возвращаем видимость в следующем кадре
+        requestAnimationFrame(function() {
+            requestAnimationFrame(function() {
+                sentenceEl.style.opacity = '1';
+                translationEl.style.opacity = '1';
+            });
+        });
       }, 200);
     } else {
-      renderSentence(text);
+      renderSentence(item.cn);
+      translationEl.textContent = item.ru || '';
     }
   }
 
@@ -232,7 +267,6 @@
     }
   }
 
-  // ===== Выделение / снятие =====
   function toggleChar(index) {
     var ch = chars[index];
     if (!/[\u4e00-\u9fff]/.test(ch)) return;
@@ -261,7 +295,6 @@
     }
   }
 
-  // ===== Словарная статья =====
   function getSelectedText() {
     var s = '';
     for (var i = 0; i < selectedIndices.length; i++) {
@@ -311,19 +344,15 @@
   function renderArticle(word, data) {
     var html = '<span class="word">' + escapeHtml(word) + '</span>';
 
-    // Основное слово и пиньинь берем из объекта match
     if (data && data.match) {
       if (data.match.pinyin) {
         html += '<span class="pinyin">' + escapeHtml(data.match.pinyin) + '</span>';
       }
-      
-      // Если у самого слова есть прямой перевод строкой, выводим его
       if (typeof data.match.meaning === 'string') {
         html += '<div class="defs"><div>' + escapeHtml(data.match.meaning) + '</div></div>';
       }
     }
 
-    // Выводим связанные слова (те, что были в массиве)
     if (data && data.match && Array.isArray(data.match.meaning)) {
       html += '<div class="defs" style="margin-top: 14px; border-top: 1px solid #3a352e; padding-top: 10px;">';
       html += '<div style="font-size: 0.85em; color: var(--text-muted); margin-bottom: 8px;">Связанные слова:</div>';
@@ -393,7 +422,6 @@
     clearTimeout(mouseTimer);
   });
 
-  // ===== Старт =====
   loadSentences();
 
 })();

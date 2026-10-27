@@ -174,7 +174,7 @@
   var translationEl = document.getElementById('translation');
 
   var allSentences = [];
-  var shuffledDeck = []; // Колода для перемешивания без повторов
+  var shuffledDeck = [];
   var currentSentence = '';
   var selectedIndices = [];
   var chars = [];
@@ -192,7 +192,7 @@
           throw new Error('пустой список');
         }
         allSentences = data;
-        refillDeck(); // Сразу создаем первую перемешанную колоду
+        refillDeck();
         showNextSentence(false);
       })
       .catch(function (err) {
@@ -201,9 +201,9 @@
       });
   }
 
-  // ===== Перемешивание (алгоритм Фишера-Йетса) =====
+  // ===== Перемешивание (Фишер-Йетс) =====
   function refillDeck() {
-    shuffledDeck = allSentences.slice(); // Копируем массив
+    shuffledDeck = allSentences.slice();
     for (var i = shuffledDeck.length - 1; i > 0; i--) {
       var j = Math.floor(Math.random() * (i + 1));
       var temp = shuffledDeck[i];
@@ -212,16 +212,14 @@
     }
   }
 
-  // ===== Показ следующего предложения =====
+  // ===== Показ предложения =====
   function showNextSentence(animate) {
     if (allSentences.length === 0) return;
 
-    // Если колода пуста — перемешиваем заново
     if (shuffledDeck.length === 0) {
       refillDeck();
     }
 
-    // Берем верхнее предложение из колоды
     var item = shuffledDeck.pop();
 
     if (animate) {
@@ -396,26 +394,40 @@
     return div.innerHTML;
   }
 
-  // ===== Управление =====
+  // ===== Управление (защита от мультитач) =====
   var LONG_PRESS_MS = 500;
   var pressTimer = null;
 
-  document.body.addEventListener('touchstart', function (e) {
-    if (e.target.classList.contains('char')) return;
+  function cancelPress() {
     clearTimeout(pressTimer);
+  }
+
+  // Обработка касаний (мобильные)
+  document.body.addEventListener('touchstart', function (e) {
+    // Если пальцев больше одного (например, свайп тремя пальцами для скрина) — игнорируем
+    if (e.touches.length > 1) {
+      cancelPress();
+      return;
+    }
+    if (e.target.classList.contains('char')) return;
+    
+    cancelPress();
     pressTimer = setTimeout(function () {
       showNextSentence(true);
     }, LONG_PRESS_MS);
   }, { passive: true });
 
-  document.body.addEventListener('touchend', function () {
-    clearTimeout(pressTimer);
+  document.body.addEventListener('touchend', cancelPress, { passive: true });
+  document.body.addEventListener('touchcancel', cancelPress, { passive: true });
+  
+  document.body.addEventListener('touchmove', function(e) {
+    // Если во время движения появился второй палец, сбрасываем таймер
+    if (e.touches.length > 1) {
+      cancelPress();
+    }
   }, { passive: true });
 
-  document.body.addEventListener('touchmove', function () {
-    clearTimeout(pressTimer);
-  }, { passive: true });
-
+  // Обработка мыши (десктоп)
   var mouseTimer = null;
   document.body.addEventListener('mousedown', function (e) {
     if (e.target.classList.contains('char')) return;

@@ -132,7 +132,6 @@
     margin-top: 8px;
   }
 
-  /* Блок перевода внизу экрана */
   .translation-wrap {
     position: fixed;
     bottom: 30px;
@@ -140,7 +139,7 @@
     right: 20px;
     display: flex;
     justify-content: center;
-    pointer-events: none; /* Чтобы не мешать кликам */
+    pointer-events: none;
   }
 
   .translation {
@@ -175,12 +174,13 @@
   var translationEl = document.getElementById('translation');
 
   var allSentences = [];
+  var shuffledDeck = []; // Колода для перемешивания без повторов
   var currentSentence = '';
   var selectedIndices = [];
   var chars = [];
   var articleCache = {};
-  var lastIndex = -1;
 
+  // ===== Загрузка предложений =====
   function loadSentences() {
     fetch('sentences.json')
       .then(function (res) {
@@ -192,6 +192,7 @@
           throw new Error('пустой список');
         }
         allSentences = data;
+        refillDeck(); // Сразу создаем первую перемешанную колоду
         showNextSentence(false);
       })
       .catch(function (err) {
@@ -200,20 +201,28 @@
       });
   }
 
+  // ===== Перемешивание (алгоритм Фишера-Йетса) =====
+  function refillDeck() {
+    shuffledDeck = allSentences.slice(); // Копируем массив
+    for (var i = shuffledDeck.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var temp = shuffledDeck[i];
+      shuffledDeck[i] = shuffledDeck[j];
+      shuffledDeck[j] = temp;
+    }
+  }
+
+  // ===== Показ следующего предложения =====
   function showNextSentence(animate) {
     if (allSentences.length === 0) return;
 
-    var idx;
-    if (allSentences.length === 1) {
-      idx = 0;
-    } else {
-      do {
-        idx = Math.floor(Math.random() * allSentences.length);
-      } while (idx === lastIndex);
+    // Если колода пуста — перемешиваем заново
+    if (shuffledDeck.length === 0) {
+      refillDeck();
     }
-    lastIndex = idx;
 
-    var item = allSentences[idx]; // Теперь это объект {cn, ru}
+    // Берем верхнее предложение из колоды
+    var item = shuffledDeck.pop();
 
     if (animate) {
       sentenceEl.style.opacity = '0';
@@ -221,9 +230,8 @@
       
       setTimeout(function () {
         renderSentence(item.cn);
-        translationEl.textContent = item.ru || ''; // Выводим перевод
+        translationEl.textContent = item.ru || '';
         
-        // Возвращаем видимость в следующем кадре
         requestAnimationFrame(function() {
             requestAnimationFrame(function() {
                 sentenceEl.style.opacity = '1';
@@ -388,7 +396,7 @@
     return div.innerHTML;
   }
 
-  // ===== Долгий тап по пустому месту — новое предложение =====
+  // ===== Управление =====
   var LONG_PRESS_MS = 500;
   var pressTimer = null;
 
